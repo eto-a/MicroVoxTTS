@@ -73,8 +73,19 @@ def synthesize_audio(text: str, lang: str, output_path: str):
             wav_file.setframerate(voice.config.sample_rate)
             
             logger.debug(f"Synthesizing text: '{text[:50]}...'")
-            voice.synthesize(text, wav_file)
-            logger.debug("Synthesis successful.")
+            
+            # voice.synthesize returns a generator in newer piper-tts versions
+            audio_stream = voice.synthesize(text)
+            chunks_written = 0
+            for chunk in audio_stream:
+                wav_file.writeframes(chunk.audio_int16_bytes)
+                chunks_written += 1
+                
+            logger.debug(f"Synthesis successful. Chunks written: {chunks_written}")
+            
+            if chunks_written == 0:
+                raise RuntimeError("Piper generated 0 audio chunks. Check if text was ignored or espeak data is missing.")
+                
     except Exception as e:
         logger.error(f"TTS Synthesis failed: {e}", exc_info=True)
         raise RuntimeError(f"TTS Synthesis failed: {str(e)}")
