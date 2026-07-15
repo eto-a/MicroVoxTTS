@@ -1,8 +1,12 @@
 import os
 import requests
 import wave
+import logging
 from piper.voice import PiperVoice
 from config import MODELS_DIR, VOICES, VoiceModel
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Initialize models dir
 if not os.path.exists(MODELS_DIR):
@@ -12,14 +16,18 @@ if not os.path.exists(MODELS_DIR):
 _loaded_voices = {}
 
 def download_file(url: str, dest_path: str):
-    print(f"Downloading {url} to {dest_path}...")
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    with open(dest_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-    print("Download complete.")
+    logger.info(f"Downloading {url} to {dest_path}...")
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(dest_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        logger.info("Download complete.")
+    except Exception as e:
+        logger.error(f"Failed to download {url}: {e}", exc_info=True)
+        raise RuntimeError(f"Failed to download model file: {e}")
 
 def ensure_model_exists(lang: str) -> VoiceModel:
     if lang not in VOICES:
@@ -41,16 +49,33 @@ def get_voice(lang: str) -> PiperVoice:
     if lang in _loaded_voices:
         return _loaded_voices[lang]
         
-    voice_config = ensure_model_exists(lang)
-    onnx_path = os.path.join(MODELS_DIR, voice_config.onnx_filename)
-    
-    # Load Piper model
-    voice = PiperVoice.load(onnx_path)
-    _loaded_voices[lang] = voice
-    return voice
+    try:
+        voice_config = ensure_model_exists(lang)
+        onnx_path = os.path.join(MODELS_DIR, voice_config.onnx_filename)
+        
+        # Load Piper model
+        logger.info(f"Loading model for language '{lang}'...")
+        voice = PiperVoice.load(onnx_path)
+        _loaded_voices[lang] = voice
+        return voice
+    except Exception as e:
+        logger.error(f"Error loading voice for '{lang}': {e}", exc_info=True)
+        raise RuntimeError(f"Could not load TTS model for {lang}: {e}")
 
 def synthesize_audio(text: str, lang: str, output_path: str):
-    voice = get_voice(lang)
-    
-    with wave.open(output_path, "wb") as wav_file:
-        voice.synthesize(text, wav_file)
+    try:
+        voice = get_voice(lang)
+        
+        with wave.open(output_path, "wb") as wav_file:
+            # Set default parameters so wave doesn't crash on close if phonemization fails
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(voice.config.sample_rate)
+            
+            logger.debug(f"Synthesizing text: '{text[:50]}...'")
+            voice.synthesize(text, wav_file)
+            logger.debug("Synthesis successful.")
+    except Exception as e:
+        logger.error(f"TTS Synthesis failed: {e}", exc_info=True)
+        raise RuntimeError(f"TTS Synthesis failed: {str(e)}")
+

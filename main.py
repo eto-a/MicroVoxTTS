@@ -1,10 +1,18 @@
 import os
 import tempfile
 import asyncio
+import logging
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Security
 from fastapi.security import APIKeyHeader
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 from config import VOICES, API_KEY, MAX_CONCURRENT_REQUESTS
 from tts_engine import synthesize_audio
 
@@ -64,4 +72,5 @@ async def tts_generate(request: TTSRequest, background_tasks: BackgroundTasks, a
             filename="speech.wav"
         )
     except Exception as e:
+        logger.error(f"Error processing TTS request: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
