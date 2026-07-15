@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY . .
 
+# Set UTF-8 locale (fixes silent C++ espeak-ng failures with non-ASCII text)
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 # Set espeak-ng data path so piper-phonemize can find it
 ENV ESPEAK_DATA_PATH=/usr/lib/x86_64-linux-gnu/espeak-ng-data
 
