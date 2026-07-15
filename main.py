@@ -13,6 +13,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
+import enum
 from config import VOICES, API_KEY, MAX_CONCURRENT_REQUESTS
 from tts_engine import synthesize_audio
 
@@ -29,9 +30,12 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
 # Concurrency control
 tts_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
+# Dynamic Enum for Swagger UI dropdown
+SupportedLangs = enum.Enum("SupportedLangs", {k: k for k in VOICES.keys()})
+
 class TTSRequest(BaseModel):
     text: str
-    lang: str = "ru"
+    lang: SupportedLangs = "ru"
 
 def remove_file(path: str):
     try:
@@ -46,8 +50,10 @@ def read_root():
 
 @app.post("/api/v1/tts")
 async def tts_generate(request: TTSRequest, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
-    if request.lang not in VOICES:
-        raise HTTPException(status_code=400, detail=f"Language '{request.lang}' is not supported. Supported: {list(VOICES.keys())}")
+    lang_val = request.lang.value if hasattr(request.lang, 'value') else request.lang
+    
+    if lang_val not in VOICES:
+        raise HTTPException(status_code=400, detail=f"Language '{lang_val}' is not supported. Supported: {list(VOICES.keys())}")
         
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
@@ -61,7 +67,7 @@ async def tts_generate(request: TTSRequest, background_tasks: BackgroundTasks, a
             
             # Since synthesize_audio is synchronous and CPU-bound, run it in a threadpool
             # to not block the asyncio event loop
-            await asyncio.to_thread(synthesize_audio, request.text, request.lang, temp_path)
+            await asyncio.to_thread(synthesize_audio, request.text, lang_val, temp_path)
             
         # Add background task to delete the file after it has been sent
         background_tasks.add_task(remove_file, temp_path)
