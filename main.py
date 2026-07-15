@@ -62,20 +62,31 @@ async def tts_generate(request: TTSRequest, background_tasks: BackgroundTasks, a
         # Acquire semaphore before doing CPU-intensive work
         async with tts_semaphore:
             # Create a temporary file to store the WAV
-            fd, temp_path = tempfile.mkstemp(suffix=".wav")
-            os.close(fd) # Close the file descriptor, we just need the path
+            fd_wav, temp_wav_path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd_wav)
             
             # Since synthesize_audio is synchronous and CPU-bound, run it in a threadpool
-            # to not block the asyncio event loop
-            await asyncio.to_thread(synthesize_audio, request.text, lang_val, temp_path)
+            await asyncio.to_thread(synthesize_audio, request.text, lang_val, temp_wav_path)
             
-        # Add background task to delete the file after it has been sent
-        background_tasks.add_task(remove_file, temp_path)
+            # Convert WAV to MP3
+            fd_mp3, temp_mp3_path = tempfile.mkstemp(suffix=".mp3")
+            os.close(fd_mp3)
+            
+            import subprocess
+            subprocess.run([
+                'ffmpeg', '-y', '-i', temp_wav_path,
+                '-codec:a', 'libmp3lame', '-qscale:a', '2',
+                temp_mp3_path
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+        # Add background task to delete the files after sending
+        background_tasks.add_task(remove_file, temp_wav_path)
+        background_tasks.add_task(remove_file, temp_mp3_path)
         
         return FileResponse(
-            temp_path, 
-            media_type="audio/wav", 
-            filename="speech.wav"
+            temp_mp3_path, 
+            media_type="audio/mpeg", 
+            filename="speech.mp3"
         )
     except Exception as e:
         logger.error(f"Error processing TTS request: {e}", exc_info=True)
